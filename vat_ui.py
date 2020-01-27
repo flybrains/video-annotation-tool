@@ -172,37 +172,34 @@ class BGCalculator(QObject):
 		self.finished.emit(bg)
 
 class MainWindow(QMainWindow):
-
 	frameTuple = pyqtSignal(int, int)
-
 	def __init__(self, parent=None):
 		super(MainWindow, self).__init__(parent)
-
 		self.experiment_configurator = ExperimentConfigWindow()
+		self.tracking_fixer = FixTrackingWindow()
 		self.behavior_selector_widget = BehaviorSelectorWidget(self)
 		self.image_widget = ImageWidget(self)
-
 		_widget = QWidget()
 		_layout = QHBoxLayout(_widget)
 		_layout.addWidget(self.image_widget)
 		_layout.addWidget(self.behavior_selector_widget)
 		self.setCentralWidget(_widget)
-
 		newAct = QAction('New Analysis', self)
 		newAct.triggered.connect(self.new_analysis_cascade)
 		self.experiment_configurator.got_values.connect(self.load_info)
-
 		menubar = self.menuBar()
 		fileMenu = menubar.addMenu('File')
 		fileMenu.addAction(newAct)
 		self.behavior_selector_widget.toggleTrack.connect(self.toggle_image)
+		self.behavior_selector_widget.newListofBehaviors.connect(self.update_list_of_behaviors)
+		self.behavior_selector_widget.fix_now.connect(self.fix_tracking)
+		self.tracking_fixer.split_read.connect(self.split_read)
+
 		self.image_widget.request_frame_status.connect(self.send_frame_status)
 		self.currentFrame = 1
 		self.n_frames = 0
 		self.frameLabel = '{} / {}'.format(self.currentFrame+1, self.n_frames)
-
 		self.mainWidgetShowsTrack = True
-
 		self.colorMap = [(153,255,153),(204,255,153),(255,153,255),(204,153,255),(51,51,255),(51,153,255),(51,255,255),(51,255,153),(255,51,255),(153,51,255),(153,153,255),(153,204,255),(255,255,153),(255,204,153),(255,153,204),(51,255,51),(153,255,51),(255,255,51),(255,153,51),(255,51,51),(255,51,153),(153,255,255),(153,255,204),(0,0,204),(0,204,102),(204,204,0),(204,102,0),(153,153,0),(0,204,0),(153,0,153)]
 
 	@pyqtSlot(str)
@@ -224,21 +221,10 @@ class MainWindow(QMainWindow):
 
 		self.frameTuple.emit(self.currentFrame, self.n_frames)
 		self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.currentFrameIndex)
-		self.update_raw_image()
-
+		self.update_raw_image(True)
+		self.mainWidgetShowsTrack=True
 
 	def track_raw_image(self):
-		self.tracked_image = self.currentRawImage.copy()
-		self.tracked_image = cv2.cvtColor(self.tracked_image, cv2.COLOR_BGR2GRAY)
-		self.tracked_image=self.tracked_image-self.bg + 10
-		height = self.currentRawImage.shape[0]
-		self.bm = cv2.cvtColor(self.bowl_mask[:, (self.mask_centroid[0]-int(height/2)):(self.mask_centroid[0]+int(height/2)),:], cv2.COLOR_BGR2GRAY)
-		self.tracked_image = cv2.bitwise_and(self.tracked_image, self.bm)
-
-		_,self.threshed_frame = cv2.threshold(self.tracked_image,self.thresh,255,cv2.THRESH_BINARY)
-		self.imagem = cv2.bitwise_not(self.threshed_frame)
-
-		self.contours, hier = cv2.findContours(self.imagem, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
 		def _get(cnt):
 			x,y,w,h = cv2.boundingRect(cnt)
@@ -258,42 +244,79 @@ class MainWindow(QMainWindow):
 				arc = (cv2.arcLength(cnt,True)/cv2.contourArea(cnt))
 			return aspect_ratio, extent, solidity, cv2.contourArea(cnt), arc
 
-		self.valids = [cnt for cnt in self.contours if (_get(cnt)[3] > self.small) and (_get(cnt)[3] < self.large) and _get(cnt)[0] < self.aspect and _get(cnt)[1] < self.extent and _get(cnt)[2] > self.solidity and _get(cnt)[-1]<self.arc]
-		self.display_frame = self.currentRawImage
+		if self.active_frame_info.tracked==False:
+			self.tracked_image = self.currentRawImage.copy()
+			self.tracked_image = cv2.cvtColor(self.tracked_image, cv2.COLOR_BGR2GRAY)
+			self.tracked_image=self.tracked_image-self.bg + 10
+			height = self.currentRawImage.shape[0]
+			self.bm = cv2.cvtColor(self.bowl_mask[:, (self.mask_centroid[0]-int(height/2)):(self.mask_centroid[0]+int(height/2)),:], cv2.COLOR_BGR2GRAY)
+			self.tracked_image = cv2.bitwise_and(self.tracked_image, self.bm)
+			_,self.threshed_frame = cv2.threshold(self.tracked_image,self.thresh,255,cv2.THRESH_BINARY)
+			self.imagem = cv2.bitwise_not(self.threshed_frame)
+			self.contours, hier = cv2.findContours(self.imagem, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+			self.valids = [cnt for cnt in self.contours if (_get(cnt)[3] > self.small) and (_get(cnt)[3] < self.large) and _get(cnt)[0] < self.aspect and _get(cnt)[1] < self.extent and _get(cnt)[2] > self.solidity and _get(cnt)[-1]<self.arc]
+			self.display_frame = self.currentRawImage
+			for idx, c in enumerate(self.valids):
+				M = cv2.moments(c)
+				if M['m00'] != 0:
+					cx = np.float16(M['m10']/M['m00'])
+					cy = np.float16(M['m01']/M['m00'])
+					contour_pt = vc.ContourPoint(idx, cx, cy, c)
+					self.active_frame_info.add_contour_point(contour_pt)
+					self.display_frame = cv2.drawContours(self.display_frame, [self.valids[idx]], -1, self.colorMap[idx], 1)
+					self.display_frame = cv2.putText(self.display_frame,"{}".format(idx+1),(int(cx+10),int(cy+10)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+			self.active_frame_info.tracked = True
+		else:
+			self.display_frame = self.currentRawImage
+			for idx, c in enumerate(self.active_frame_info.get_list_of_contour_points()):
+				self.display_frame = cv2.drawContours(self.display_frame, [c.c], -1, self.colorMap[idx], 1)
+				self.display_frame = cv2.putText(self.display_frame,"{}".format(c.id),(int(c.x+10),int(c.y+10)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
 
-		for idx, c in enumerate(self.valids):
-			M = cv2.moments(c)
-			if M['m00'] != 0:
-				cx = np.float16(M['m10']/M['m00'])
-				cy = np.float16(M['m01']/M['m00'])
-				self.display_frame = cv2.circle(self.display_frame, (cx,cy), 16,self.colorMap[idx],2)
-				self.display_frame = cv2.putText(self.display_frame,"{}".format(idx+1),(int(cx+10),int(cy+10)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+	@pyqtSlot()
+	def update_list_of_behaviors(self):
+		self.active_frame_info.behavior_list = self.behavior_selector_widget.list_of_behaviors
+		print(self.active_frame_info.behavior_list)
 
-
-
-	def update_raw_image(self):
-
+	def update_raw_image(self, tracking):
+		self.active_frame_info = self.video_information.get_frame_list()[self.currentFrame-1]
 		self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.currentFrameIndex)
 		_, self.currentRawImage = self.cap.read()
 		height = self.currentRawImage.shape[0]
 		self.currentRawImage = self.currentRawImage[:, (self.mask_centroid[0]-int(height/2)):(self.mask_centroid[0]+int(height/2)),:]
 		self.currentRawImage = cv2.bitwise_and(self.currentRawImage, self.bowl_mask[:, (self.mask_centroid[0]-int(height/2)):(self.mask_centroid[0]+int(height/2)),:])
-		self.track_raw_image()
-		self.image_widget.setLabel(self.display_frame)
+
+		if tracking==True:
+			self.track_raw_image()
+			self.image_widget.setLabel(self.display_frame)
+		else:
+			self.image_widget.setLabel(self.currentRawImage)
 
 	@pyqtSlot()
 	def toggle_image(self):
+
 		if self.mainWidgetShowsTrack==True:
-			self.image_widget.setLabel(self.currentRawImage)
+			self.update_raw_image(False)
+			self.mainWidgetShowsTrack=False
+		else:
+			self.update_raw_image(True)
+			self.mainWidgetShowsTrack=True
+
+	@pyqtSlot(int)
+	def split_read(self, read_to_split):
+		self.highest_index = len(self.list_of_contour_points)
+		if self.highest_index < self.n_animals:
+			split_point_info = self.active_frame_info.get_list_of_contour_points()[read_to_split-1]
+			split_point_info.id = self.highest_index+1
+			self.active_frame_info.add_contour_point(split_point_info)
 
 
 	def _get_spaced_frames(self, depth):
 		self.frameIdxs = np.linspace(0, int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)), num=depth)
 		self.frameIdxs = [int(e) for e in self.frameIdxs]
 
-	def new_analysis_cascade(self):
-		self.experiment_configurator.show()
-		self.experiment_configurator.move((self.x() + self.width()) / 2, (self.y() + self.height()) / 2)
+	def fix_tracking(self):
+		self.tracking_fixer.show()
+		self.tracking_fixer.move((self.x() + self.width()) / 2, (self.y() + self.height()) / 2)
 
 	def get_cap(self):
 		self.cap = cv2.VideoCapture(self.video_address)
@@ -304,11 +327,58 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.adjust_size_widgets(self.n_animals)
 		self._get_spaced_frames(self.n_frames)
 		self.currentFrameIndex = self.frameIdxs[0]
+
+		self.video_information = vc.VideoInformation(self.video_address)
+		for i in range(self.n_frames):
+			new_frame = vc.FrameInformation(i+1, self.video_address, self.n_animals, self.frameIdxs[i])
+			self.video_information.add_frame(new_frame)
 		self.send_frame_status('')
+
+	def new_analysis_cascade(self):
+		self.experiment_configurator.show()
+		self.experiment_configurator.move((self.x() + self.width()) / 2, (self.y() + self.height()) / 2)
+
+
+class FixTrackingWindow(QDialog):
+	split_read = pyqtSignal(int)
+	def __init__(self,parent=None):
+		super(FixTrackingWindow, self).__init__(parent)
+
+		self.pb1 = QPushButton("Split Joined Read")
+		self.pb2 = QPushButton("Remove False Read")
+		self.pb3 = QPushButton('Add Missed Read')
+
+		self.sp1 = QSpinBox()
+		self.sp2 = QSpinBox()
+		self.sp1.setMaximumWidth(24)
+		self.sp2.setMaximumWidth(24)
+
+		self.donepb = QPushButton('Done')
+
+		self.grid = QGridLayout()
+		self.grid.setSpacing(5)
+		self.grid.addWidget(self.pb1, 1, 0)
+		self.grid.addWidget(self.sp1,1,1)
+		self.grid.addWidget(self.pb2, 2, 0)
+		self.grid.addWidget(self.sp2, 2,1)
+		self.grid.addWidget(self.pb3, 3, 0)
+		self.grid.addWidget(self.donepb, 4, 0)
+		self.setLayout(self.grid)
+		self.resize(300, 300)
+		self.setFixedSize(self.size())
+		self.setWindowTitle('Fix Tracking')
+
+		self.pb1.clicked.connect(self.split_reads)
+
+	def split_reads(self):
+		self.read_to_split = int(self.sp1.value())-1
+		self.split_read.emit(self.read_to_split)
 
 
 class BehaviorSelectorWidget(QWidget):
 	toggleTrack = pyqtSignal()
+	newListofBehaviors = pyqtSignal()
+	fix_now = pyqtSignal()
 	def __init__(self, parent):
 		super(BehaviorSelectorWidget, self).__init__(parent)
 		self.vbox = QVBoxLayout()
@@ -351,10 +421,16 @@ class BehaviorSelectorWidget(QWidget):
 		hbox.addWidget(spacer_label)
 		hbox.addWidget(self.fixButton)
 		hbox.addWidget(self.toggleButton)
-		hbox.addWidget(self.saveButton)
 		self.vbox.addLayout(hbox)
 		self.saveButton.clicked.connect(self.log_entries)
 		self.toggleButton.clicked.connect(self.toggle_track)
+		hbox1 = QHBoxLayout()
+		hbox1.addWidget(spacer_label)
+		hbox1.addWidget(self.saveButton)
+		self.vbox.addLayout(hbox1)
+
+	def signal_fix_track(self):
+		self.fix_now.emit()
 
 	def toggle_track(self):
 		self.toggleTrack.emit()
@@ -363,7 +439,7 @@ class BehaviorSelectorWidget(QWidget):
 		self.list_of_behaviors = []
 		for idx, i in enumerate(self.list_of_comboboxes):
 			self.list_of_behaviors.append([str(self.list_of_scomboboxes[idx].currentText()), str(i.currentText())])
-		print(self.list_of_behaviors)
+		self.newListofBehaviors.emit()
 		return None
 
 class ImageWidget(QWidget):
@@ -406,6 +482,7 @@ class ImageWidget(QWidget):
 
 	@pyqtSlot(QImage)
 	def setLabel(self, image):
+
 		image = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
 		image = image.copy()
 		self.qimage = QImage(image, image.shape[0], image.shape[1], QImage.Format_RGB888)
