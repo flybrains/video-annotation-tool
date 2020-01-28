@@ -15,11 +15,12 @@ class VideoInformation(object):
         return self.frames
 
 class ContourPoint(object):
-    def __init__(self, id, x, y, c):
+    def __init__(self, id, x, y, c, label_config):
         self.id = id
         self.x = x
         self.y = y
         self.c = c
+        self.label_config = label_config
 
 class FrameInformation(object):
     def __init__(self, index, video_name, n_individuals, frameNo):

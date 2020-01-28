@@ -99,8 +99,12 @@ class ExperimentConfigWindow(QDialog):
 
 	def define_food_patch(self, patches):
 		ed = vu.EllipseDrawer(self.video_address)
-		ed.define_food_patches(int(self.sp3.value()))
-		self.food_patch_mask = ed.get_food_patches()
+		self.n_food_patch = int(self.sp3.value())
+		if self.n_food_patch==0:
+			self.food_patch_mask=None
+		else:
+			ed.define_food_patches(self.n_food_patch)
+			self.food_patch_mask = ed.get_food_patches()
 		self.indicator_label3.setStyleSheet('background-color: green')
 
 		self.bg_progress_window = QProgressDialog(self)
@@ -194,6 +198,8 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.newListofBehaviors.connect(self.update_list_of_behaviors)
 		self.behavior_selector_widget.fix_now.connect(self.fix_tracking)
 		self.tracking_fixer.split_read.connect(self.split_read)
+		self.tracking_fixer.remove_read.connect(self.remove_read)
+		self.tracking_fixer.add_read.connect(self.add_read)
 
 		self.image_widget.request_frame_status.connect(self.send_frame_status)
 		self.currentFrame = 1
@@ -261,16 +267,30 @@ class MainWindow(QMainWindow):
 				if M['m00'] != 0:
 					cx = np.float16(M['m10']/M['m00'])
 					cy = np.float16(M['m01']/M['m00'])
-					contour_pt = vc.ContourPoint(idx, cx, cy, c)
+					contour_pt = vc.ContourPoint(idx+1, cx, cy, c, 1)
 					self.active_frame_info.add_contour_point(contour_pt)
 					self.display_frame = cv2.drawContours(self.display_frame, [self.valids[idx]], -1, self.colorMap[idx], 1)
-					self.display_frame = cv2.putText(self.display_frame,"{}".format(idx+1),(int(cx+10),int(cy+10)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+
+					self.display_frame = cv2.putText(self.display_frame,"{}".format(contour_pt.id),(int(cx+10),int(cy+10)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
 			self.active_frame_info.tracked = True
 		else:
 			self.display_frame = self.currentRawImage
 			for idx, c in enumerate(self.active_frame_info.get_list_of_contour_points()):
-				self.display_frame = cv2.drawContours(self.display_frame, [c.c], -1, self.colorMap[idx], 1)
-				self.display_frame = cv2.putText(self.display_frame,"{}".format(c.id),(int(c.x+10),int(c.y+10)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+				if c.label_config==1:
+					xp, yp = 10,10
+				elif c.label_config==2:
+					xp, yp = -10,-10
+				elif c.label_config==3:
+					xp, yp = 10,-10
+				elif c.label_config==4:
+					xp, yp = -10,10
+				if c.c is not None:
+					self.display_frame = cv2.drawContours(self.display_frame, [c.c], -1, self.colorMap[idx], 1)
+					self.display_frame = cv2.putText(self.display_frame,"{}".format(c.id),(int(c.x+xp),int(c.y+yp)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+				else:
+					self.display_frame = cv2.circle(self.display_frame,(c.x,c.y),4,self.colorMap[idx],1)
+					self.display_frame = cv2.putText(self.display_frame,"{}".format(c.id),(int(c.x+xp),int(c.y+yp)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+
 
 	@pyqtSlot()
 	def update_list_of_behaviors(self):
@@ -303,17 +323,53 @@ class MainWindow(QMainWindow):
 
 	@pyqtSlot(int)
 	def split_read(self, read_to_split):
-		self.highest_index = len(self.list_of_contour_points)
+		self.highest_index = len(self.active_frame_info.list_of_contour_points)
+		self.rts = self.active_frame_info.list_of_contour_points[read_to_split]
 		if self.highest_index < self.n_animals:
-			split_point_info = self.active_frame_info.get_list_of_contour_points()[read_to_split-1]
-			split_point_info.id = self.highest_index+1
-			self.active_frame_info.add_contour_point(split_point_info)
+			new_contour_pt = vc.ContourPoint(self.highest_index+1, self.rts.x,  self.rts.y,  self.rts.c, self.rts.label_config+1)
+			self.active_frame_info.add_contour_point(new_contour_pt)
+			self.update_raw_image(True)
+		else:
+			# Error message
+			pass
 
+	@pyqtSlot()
+	def add_read(self):
+		if len(self.active_frame_info.list_of_contour_points) < self.n_animals:
+			self.point_adder = vu.PointAdder(self.currentRawImage)
+			self.point_adder.define_point_location()
+			point = self.point_adder.get_point()
+			self.highest_index = len(self.active_frame_info.list_of_contour_points)
+			new_contour_pt = vc.ContourPoint(self.highest_index+1, point[0],  point[1], None, 1)
+			self.active_frame_info.add_contour_point(new_contour_pt)
+			temp = [e for e in self.active_frame_info.list_of_contour_points]
+			self.active_frame_info.list_of_contour_points = temp
+			for idx, e in enumerate(self.active_frame_info.list_of_contour_points):
+				e.id = idx+1
+			self.update_raw_image(True)
+
+		else:
+			# Error message
+			pass
+
+
+	@pyqtSlot(int)
+	def remove_read(self, read_to_remove):
+		if len(self.active_frame_info.list_of_contour_points) > 0:
+			temp = [e for e in self.active_frame_info.list_of_contour_points if e.id!=read_to_remove]
+			self.active_frame_info.list_of_contour_points = temp
+			for idx, e in enumerate(self.active_frame_info.list_of_contour_points):
+				e.id = idx+1
+			self.update_raw_image(True)
+		else:
+			# Error message
+			pass
 
 	def _get_spaced_frames(self, depth):
 		self.frameIdxs = np.linspace(0, int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)), num=depth)
 		self.frameIdxs = [int(e) for e in self.frameIdxs]
 
+	@pyqtSlot()
 	def fix_tracking(self):
 		self.tracking_fixer.show()
 		self.tracking_fixer.move((self.x() + self.width()) / 2, (self.y() + self.height()) / 2)
@@ -341,6 +397,8 @@ class MainWindow(QMainWindow):
 
 class FixTrackingWindow(QDialog):
 	split_read = pyqtSignal(int)
+	remove_read = pyqtSignal(int)
+	add_read = pyqtSignal()
 	def __init__(self,parent=None):
 		super(FixTrackingWindow, self).__init__(parent)
 
@@ -348,10 +406,14 @@ class FixTrackingWindow(QDialog):
 		self.pb2 = QPushButton("Remove False Read")
 		self.pb3 = QPushButton('Add Missed Read')
 
+		self.pb1.setMaximumWidth(140)
+		self.pb2.setMaximumWidth(140)
+		self.pb3.setMaximumWidth(140)
+
 		self.sp1 = QSpinBox()
 		self.sp2 = QSpinBox()
-		self.sp1.setMaximumWidth(24)
-		self.sp2.setMaximumWidth(24)
+		self.sp1.setMaximumWidth(54)
+		self.sp2.setMaximumWidth(54)
 
 		self.donepb = QPushButton('Done')
 
@@ -369,10 +431,29 @@ class FixTrackingWindow(QDialog):
 		self.setWindowTitle('Fix Tracking')
 
 		self.pb1.clicked.connect(self.split_reads)
+		self.pb2.clicked.connect(self.remove_reads)
+		self.pb3.clicked.connect(self.add_reads)
+		self.donepb.clicked.connect(self.close)
 
 	def split_reads(self):
-		self.read_to_split = int(self.sp1.value())-1
-		self.split_read.emit(self.read_to_split)
+		if int(self.sp1.value())==0:
+			pass
+		else:
+			self.read_to_split = int(self.sp1.value())-1
+			self.split_read.emit(self.read_to_split)
+			self.sp1.setValue(0)
+
+	def remove_reads(self):
+		if int(self.sp2.value())==0:
+			pass
+		else:
+			self.read_to_remove = int(self.sp2.value())
+			self.remove_read.emit(self.read_to_remove)
+			self.sp2.setValue(0)
+
+
+	def add_reads(self):
+		self.add_read.emit()
 
 
 class BehaviorSelectorWidget(QWidget):
@@ -414,6 +495,7 @@ class BehaviorSelectorWidget(QWidget):
 		self.saveButton = QPushButton('Save')
 		self.toggleButton = QPushButton('Toggle Tracking')
 		self.fixButton = QPushButton('Fix Tracking')
+		self.fixButton.clicked.connect(self.signal_fix_track)
 
 		spacer_label = QLabel()
 		spacer_label.setText('        ')
@@ -464,7 +546,7 @@ class ImageWidget(QWidget):
 		vbox.addLayout(hbox1)
 		vbox.addLayout(hbox2)
 		self.setLayout(vbox)
-		testImage = np.zeros((700,700,3),dtype=np.uint8)
+		testImage = np.zeros((900,900,3),dtype=np.uint8)
 		self.setLabel(testImage)
 		self.forwardPB.clicked.connect(self.increment_frame_count)
 		self.backwardPB.clicked.connect(self.decrement_frame_count)
@@ -486,10 +568,10 @@ class ImageWidget(QWidget):
 		image = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
 		image = image.copy()
 		self.qimage = QImage(image, image.shape[0], image.shape[1], QImage.Format_RGB888)
-		self.qimage = self.qimage.scaled(700,700)
+		self.qimage = self.qimage.scaled(900,900)
 		pixmap = QPixmap(self.qimage)
 		#pixmap = pixmap.scaled(700,700)
-		self.imageRef = self.qimage.scaled(700,700)
+		self.imageRef = self.qimage.scaled(900,900)
 		self.label.setPixmap(pixmap)
 		self.label.show()
 

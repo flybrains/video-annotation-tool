@@ -3,7 +3,39 @@ import numpy as np
 from skimage.measure import EllipseModel
 from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot, QObject
 
+class PointAdder(object):
+	def __init__(self, frame):
+		self.frame = frame
+		self.point = None
 
+	def add_point(self, event,x,y,flags,param):
+		if event == cv2.EVENT_LBUTTONDOWN:
+			self.drawing = True
+			self.ix,self.iy = x,y
+
+		elif event == cv2.EVENT_LBUTTONUP:
+			self.drawing = False
+			cv2.circle(self.display_frame,(x,y),4,(255,255,255),-1)
+			self.point = [x,y]
+
+	def define_point_location(self):
+		self.display_frame = self.frame
+		#self.display_frame = cv2.resize(self.frame, None, fx=0.5, fy=0.)
+		cv2.namedWindow('image')
+		cv2.setMouseCallback('image',self.add_point)
+
+		while self.point is None:
+			cv2.imshow('image',self.display_frame)
+			cv2.moveWindow('image',10,10)
+			k = cv2.waitKey(1) & 0xFF
+			if k == ord('m'):
+				break
+			elif k == 27:
+				break
+		cv2.destroyAllWindows()
+
+	def get_point(self):
+		return self.point
 
 class EllipseDrawer(object):
 	def __init__(self, video_address):
@@ -38,38 +70,44 @@ class EllipseDrawer(object):
 		cv2.namedWindow('image')
 		cv2.setMouseCallback('image',self.draw_dot)
 
-		while(len(self.points)<5*n_patches):
-			if len(self.points)==5:
-				self.draw_color = (255,0,0)
-				self.index=1
-			cv2.imshow('image',self.display_frame)
-			k = cv2.waitKey(1) & 0xFF
-			if k == ord('m'):
-				break
-			elif k == 27:
-				break
+		if n_patches==0:
+			self.no_patch = True
+			pass
+		else:
+			while(len(self.points)<5*n_patches):
+				if len(self.points)==5:
+					self.draw_color = (255,0,0)
+					self.index=1
+				cv2.imshow('image',self.display_frame)
+				cv2.moveWindow('image',10,10)
+				k = cv2.waitKey(1) & 0xFF
+				if k == ord('m'):
+					break
+				elif k == 27:
+					break
 
-		if len(self.points) == 5:
-			self.segmented_points = self.points
-		elif len(self.points) == 10:
-			self.segmented_points = [[e for e in self.points[:5]],[e for e in self.points[5:]]]
+			if len(self.points) == 5:
+				self.segmented_points = self.points
+			elif len(self.points) == 10:
+				self.segmented_points = [[e for e in self.points[:5]],[e for e in self.points[5:]]]
 
-		point_array = np.asarray(self.segmented_points)
+			point_array = np.asarray(self.segmented_points)
 
-		if n_patches==1:
-			point_array = np.expand_dims(point_array, axis=0)
+			if n_patches==1:
+				point_array = np.expand_dims(point_array, axis=0)
 
-		colors = [(0,0,255),(255,0,0)]
-		self.food_patch_mask = np.zeros(self.display_frame.shape, dtype=np.uint8)
-		for i in range(n_patches):
-			xy = EllipseModel()
-			xy.estimate(point_array[i])
-			xc,yc, a,b,theta =  int(xy.params[0]), int(xy.params[1]), int(xy.params[2]), int(xy.params[3]), int(np.rad2deg(xy.params[4]))
-			self.frame = cv2.ellipse(self.display_frame, (xc,yc), (a,b), theta, 0,360,colors[i], 1)
-			self.food_patch_mask = cv2.ellipse(self.food_patch_mask, (xc,yc), (a,b), theta, 0,360,(255,255,255), -1)
-		cv2.imshow('image', self.display_frame)
-		cv2.waitKey(0)
-		cv2.destroyAllWindows()
+			colors = [(0,0,255),(255,0,0)]
+			self.food_patch_mask = np.zeros(self.display_frame.shape, dtype=np.uint8)
+			for i in range(n_patches):
+				xy = EllipseModel()
+				xy.estimate(point_array[i])
+				xc,yc, a,b,theta =  int(xy.params[0]), int(xy.params[1]), int(xy.params[2]), int(xy.params[3]), int(np.rad2deg(xy.params[4]))
+				self.frame = cv2.ellipse(self.display_frame, (xc,yc), (a,b), theta, 0,360,colors[i], 1)
+				self.food_patch_mask = cv2.ellipse(self.food_patch_mask, (xc,yc), (a,b), theta, 0,360,(255,255,255), -1)
+			cv2.imshow('image', self.display_frame)
+			cv2.moveWindow('image',10,10)
+			cv2.waitKey(0)
+			cv2.destroyAllWindows()
 
 	def define_bowl_mask(self):
 		self._load_video_frame()
@@ -79,6 +117,7 @@ class EllipseDrawer(object):
 
 		while(len(self.points)<5):
 			cv2.imshow('image',self.display_frame)
+			cv2.moveWindow('image',10,10)
 			k = cv2.waitKey(1) & 0xFF
 			if k == ord('m'):
 				break
@@ -107,6 +146,7 @@ class EllipseDrawer(object):
 			cv2.putText(display_masked,"{}/5".format(i+1),(x+10,y+10), cv2.FONT_HERSHEY_PLAIN, 1, (0,0,255))
 
 		cv2.imshow('image', display_masked)
+		cv2.moveWindow('image',10,10)
 		cv2.waitKey(0)
 		cv2.destroyAllWindows()
 
@@ -114,7 +154,10 @@ class EllipseDrawer(object):
 		return self.bowl_mask, self.mask_centroid
 
 	def get_food_patches(self):
-		return self.food_patch_mask
+		if not self.no_patch:
+			return self.food_patch_mask
+		else:
+			return None
 
 class Thresholder(object):
 	def __init__(self, video_address, bg, center, mask):
@@ -200,8 +243,9 @@ class Thresholder(object):
 
 		while(1):
 			cv2.imshow('Threshold',self.display_frame)
+			cv2.moveWindow('image',10,10)
 			k = cv2.waitKey(1) & 0xFF
-			if k == 27:
+			if k == 27 or k==13:
 				break
 
 			# get current positions of four trackbars
