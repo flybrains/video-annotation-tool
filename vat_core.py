@@ -1,9 +1,10 @@
 
 
 class VideoInformation(object):
-    def __init__(self, video_name):
+    def __init__(self, video_name, metadata):
         self.video_name = video_name
         self.frames = []
+        self.metadata = metadata
 
     def add_frame(self, frame):
         self.frames.append(frame)
@@ -31,6 +32,7 @@ class FrameInformation(object):
         self.list_of_contour_points = []
         self.tracked = False
         self.behavior_list = []
+        self.saved = False
 
     def add_contour_point(self, pt):
         self.list_of_contour_points.append(pt)

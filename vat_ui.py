@@ -5,6 +5,8 @@ import cv2
 import threading
 import vat_core as vc
 import vat_utilities as vu
+import pickle
+from PyQt5 import QtCore
 from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot, QObject
 from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import QSpacerItem, QProgressDialog, QDialog, QWidget,QApplication, QMainWindow, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QLineEdit, QMenu, QAction, QSpinBox, QGridLayout, QFileDialog
@@ -13,6 +15,7 @@ from PyQt5.QtWidgets import QSpacerItem, QProgressDialog, QDialog, QWidget,QAppl
 class ExperimentConfigWindow(QDialog):
 	got_values = pyqtSignal(int)
 	start_bg_comp = pyqtSignal(str, int)
+
 	def __init__(self,parent=None):
 		super(ExperimentConfigWindow, self).__init__(parent)
 
@@ -177,6 +180,7 @@ class BGCalculator(QObject):
 
 class MainWindow(QMainWindow):
 	frameTuple = pyqtSignal(int, int)
+	update_combos = pyqtSignal()
 	def __init__(self, parent=None):
 		super(MainWindow, self).__init__(parent)
 		self.experiment_configurator = ExperimentConfigWindow()
@@ -197,6 +201,7 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.toggleTrack.connect(self.toggle_image)
 		self.behavior_selector_widget.newListofBehaviors.connect(self.update_list_of_behaviors)
 		self.behavior_selector_widget.fix_now.connect(self.fix_tracking)
+		self.behavior_selector_widget.signal_save.connect(self.save_to_cache)
 		self.tracking_fixer.split_read.connect(self.split_read)
 		self.tracking_fixer.remove_read.connect(self.remove_read)
 		self.tracking_fixer.add_read.connect(self.add_read)
@@ -207,6 +212,11 @@ class MainWindow(QMainWindow):
 		self.frameLabel = '{} / {}'.format(self.currentFrame+1, self.n_frames)
 		self.mainWidgetShowsTrack = True
 		self.colorMap = [(153,255,153),(204,255,153),(255,153,255),(204,153,255),(51,51,255),(51,153,255),(51,255,255),(51,255,153),(255,51,255),(153,51,255),(153,153,255),(153,204,255),(255,255,153),(255,204,153),(255,153,204),(51,255,51),(153,255,51),(255,255,51),(255,153,51),(255,51,51),(255,51,153),(153,255,255),(153,255,204),(0,0,204),(0,204,102),(204,204,0),(204,102,0),(153,153,0),(0,204,0),(153,0,153)]
+
+	@pyqtSlot()
+	def save_to_cache(self):
+		with open(os.path.join(os.getcwd(), 'experiment_cache','cache.pkl'), 'wb') as f:
+			pickle.dump(self.video_information, f)
 
 	@pyqtSlot(str)
 	def send_frame_status(self, id):
@@ -224,6 +234,7 @@ class MainWindow(QMainWindow):
 		self.currentFrameIndex = self.frameIdxs[self.currentFrame-1]
 		if self.currentFrame==self.n_frames:
 			self.currentFrameIndex = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)-6)
+
 
 		self.frameTuple.emit(self.currentFrame, self.n_frames)
 		self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.currentFrameIndex)
@@ -294,11 +305,25 @@ class MainWindow(QMainWindow):
 
 	@pyqtSlot()
 	def update_list_of_behaviors(self):
+		self.active_frame_info.saved = True
+		self.behavior_selector_widget.saved_indicator.setStyleSheet('background-color: green')
+
 		self.active_frame_info.behavior_list = self.behavior_selector_widget.list_of_behaviors
-		print(self.active_frame_info.behavior_list)
+		self.active_frame_info.position_list = [[e.id, e.x, e.y] for e in self.active_frame_info.list_of_contour_points]
+
 
 	def update_raw_image(self, tracking):
 		self.active_frame_info = self.video_information.get_frame_list()[self.currentFrame-1]
+
+		if self.active_frame_info.saved:
+			self.behavior_selector_widget.saved_indicator.setStyleSheet('background-color: green')
+		else:
+			self.behavior_selector_widget.saved_indicator.setStyleSheet('background-color: red')
+
+
+		self.update_combos.emit()
+
+
 		self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.currentFrameIndex)
 		_, self.currentRawImage = self.cap.read()
 		height = self.currentRawImage.shape[0]
@@ -352,7 +377,6 @@ class MainWindow(QMainWindow):
 			# Error message
 			pass
 
-
 	@pyqtSlot(int)
 	def remove_read(self, read_to_remove):
 		if len(self.active_frame_info.list_of_contour_points) > 0:
@@ -379,12 +403,16 @@ class MainWindow(QMainWindow):
 
 	def load_info(self):
 		self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc,self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid = self.experiment_configurator.get_values()
+		metadata = {'thresh':self.thresh,'large':self.large, 'small':self.small,
+					'solidity':self.solidity,'extent':self.extent, 'aspect':self.aspect, 'arc':self.arc,'bg':self.bg,
+					'video_address':self.video_address, 'n_patches':self.n_patches, 'n_animals':self.n_animals,
+					'n_frames':self.n_frames, 'bowl_mask':self.bowl_mask, 'food_patch_mask':self.food_patch_mask, 'mask_centroid':self.mask_centroid}
 		self.get_cap()
 		self.behavior_selector_widget.adjust_size_widgets(self.n_animals)
 		self._get_spaced_frames(self.n_frames)
 		self.currentFrameIndex = self.frameIdxs[0]
 
-		self.video_information = vc.VideoInformation(self.video_address)
+		self.video_information = vc.VideoInformation(self.video_address, metadata)
 		for i in range(self.n_frames):
 			new_frame = vc.FrameInformation(i+1, self.video_address, self.n_animals, self.frameIdxs[i])
 			self.video_information.add_frame(new_frame)
@@ -393,7 +421,6 @@ class MainWindow(QMainWindow):
 	def new_analysis_cascade(self):
 		self.experiment_configurator.show()
 		self.experiment_configurator.move((self.x() + self.width()) / 2, (self.y() + self.height()) / 2)
-
 
 class FixTrackingWindow(QDialog):
 	split_read = pyqtSignal(int)
@@ -455,17 +482,38 @@ class FixTrackingWindow(QDialog):
 	def add_reads(self):
 		self.add_read.emit()
 
-
 class BehaviorSelectorWidget(QWidget):
 	toggleTrack = pyqtSignal()
 	newListofBehaviors = pyqtSignal()
 	fix_now = pyqtSignal()
+	signal_save = pyqtSignal()
 	def __init__(self, parent):
 		super(BehaviorSelectorWidget, self).__init__(parent)
 		self.vbox = QVBoxLayout()
 		self.spacer  = QSpacerItem(145,1)
 		self.vbox.addSpacerItem(self.spacer)
 		self.setLayout(self.vbox)
+		self.parent().update_combos.connect(self.update_comboboxes)
+		self.mw = self.parent()
+
+	@pyqtSlot()
+	def update_comboboxes(self):
+		if self.mw.active_frame_info.saved:
+			sexes = [e[0] for e in self.mw.active_frame_info.behavior_list]
+			behaviors = [e[1] for e in self.mw.active_frame_info.behavior_list]
+
+			for idx, cbb in enumerate(self.list_of_comboboxes):
+				index = cbb.findText(behaviors[idx], QtCore.Qt.MatchFixedString)
+				if index >= 0:
+					cbb.setCurrentIndex(index)
+			for idx, scbb in enumerate(self.list_of_scomboboxes):
+				index = scbb.findText(sexes[idx], QtCore.Qt.MatchFixedString)
+				if index >= 0:
+					scbb.setCurrentIndex(index)
+		else:
+			for idx, cbb in enumerate(self.list_of_comboboxes):
+				cbb.setCurrentIndex(0)
+				self.list_of_scomboboxes[idx].setCurrentIndex(0)
 
 	def adjust_size_widgets(self, n_individuals):
 		self.list_of_comboboxes = []
@@ -483,7 +531,6 @@ class BehaviorSelectorWidget(QWidget):
 			combo = QComboBox(self)
 			combo.addItem("Nothing")
 			combo.addItem("Courting")
-			combo.addItem("Sleeping")
 			combo.addItem("Copulation")
 			hbox = QHBoxLayout()
 			hbox.addWidget(label)
@@ -497,6 +544,11 @@ class BehaviorSelectorWidget(QWidget):
 		self.fixButton = QPushButton('Fix Tracking')
 		self.fixButton.clicked.connect(self.signal_fix_track)
 
+		self.saved_indicator = QLabel()
+		self.saved_indicator.resize(24,24)
+		self.saved_indicator.setMaximumWidth(24)
+		self.saved_indicator.setStyleSheet('background-color: red')
+
 		spacer_label = QLabel()
 		spacer_label.setText('        ')
 		hbox = QHBoxLayout()
@@ -508,6 +560,7 @@ class BehaviorSelectorWidget(QWidget):
 		self.toggleButton.clicked.connect(self.toggle_track)
 		hbox1 = QHBoxLayout()
 		hbox1.addWidget(spacer_label)
+		hbox1.addWidget(self.saved_indicator)
 		hbox1.addWidget(self.saveButton)
 		self.vbox.addLayout(hbox1)
 
@@ -522,6 +575,7 @@ class BehaviorSelectorWidget(QWidget):
 		for idx, i in enumerate(self.list_of_comboboxes):
 			self.list_of_behaviors.append([str(self.list_of_scomboboxes[idx].currentText()), str(i.currentText())])
 		self.newListofBehaviors.emit()
+		self.signal_save.emit()
 		return None
 
 class ImageWidget(QWidget):
@@ -574,7 +628,6 @@ class ImageWidget(QWidget):
 		self.imageRef = self.qimage.scaled(900,900)
 		self.label.setPixmap(pixmap)
 		self.label.show()
-
 
 def main():
 	app = QApplication(sys.argv)
