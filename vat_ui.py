@@ -138,6 +138,8 @@ class ExperimentConfigWindow(QDialog):
 		return None
 
 	def get_values(self):
+		height = self.food_patch_mask.shape[0]
+		self.food_patch_mask = self.food_patch_mask[:, int(self.mask_centroid[0]-(height/2)):int(self.mask_centroid[0]+(height/2)),:]
 		return self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc, self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid
 
 class BGCalculator(QObject):
@@ -192,12 +194,19 @@ class MainWindow(QMainWindow):
 		_layout.addWidget(self.image_widget)
 		_layout.addWidget(self.behavior_selector_widget)
 		self.setCentralWidget(_widget)
+
 		newAct = QAction('New Analysis', self)
 		newAct.triggered.connect(self.new_analysis_cascade)
 		self.experiment_configurator.got_values.connect(self.load_info)
 		menubar = self.menuBar()
 		fileMenu = menubar.addMenu('File')
 		fileMenu.addAction(newAct)
+
+
+		saveAct = QAction('Save Analysis', self)
+		saveAct.triggered.connect(self.save_analysis)
+		fileMenu.addAction(saveAct)
+
 		self.behavior_selector_widget.toggleTrack.connect(self.toggle_image)
 		self.behavior_selector_widget.newListofBehaviors.connect(self.update_list_of_behaviors)
 		self.behavior_selector_widget.fix_now.connect(self.fix_tracking)
@@ -212,6 +221,26 @@ class MainWindow(QMainWindow):
 		self.frameLabel = '{} / {}'.format(self.currentFrame+1, self.n_frames)
 		self.mainWidgetShowsTrack = True
 		self.colorMap = [(153,255,153),(204,255,153),(255,153,255),(204,153,255),(51,51,255),(51,153,255),(51,255,255),(51,255,153),(255,51,255),(153,51,255),(153,153,255),(153,204,255),(255,255,153),(255,204,153),(255,153,204),(51,255,51),(153,255,51),(255,255,51),(255,153,51),(255,51,51),(255,51,153),(153,255,255),(153,255,204),(0,0,204),(0,204,102),(204,204,0),(204,102,0),(153,153,0),(0,204,0),(153,0,153)]
+		self.setFixedSize(1200,1000)
+
+	def save_analysis(self):
+		with open(os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name)), 'wb') as f:
+			pickle.dump(self.video_information, f)
+		picklename = os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name))
+		dw = vu.DataWriter(picklename)
+		dw.make_rows()
+		dw.write_csv()
+
+	def make_data_folder(self):
+		if 'data' not in os.listdir(os.getcwd()):
+			os.mkdir(os.path.join(os.getcwd(), 'data'))
+		if 'experiment_cache' not in os.listdir(os.getcwd()):
+			os.mkdir(os.path.join(os.getcwd(), 'experiment_cache'))
+		self.name = (self.video_address.split('/')[-1]).split('.')[0]
+		if self.name not in os.listdir(os.path.join(os.getcwd(), 'data')):
+			os.mkdir(os.path.join(os.getcwd(), 'data', self.name))
+		if 'labelled_photos' not in os.listdir(os.path.join(os.getcwd(), 'data', self.name)):
+			os.mkdir(os.path.join(os.getcwd(), 'data', self.name,'labelled_photos'))
 
 	@pyqtSlot()
 	def save_to_cache(self):
@@ -301,7 +330,7 @@ class MainWindow(QMainWindow):
 				else:
 					self.display_frame = cv2.circle(self.display_frame,(c.x,c.y),4,self.colorMap[idx],1)
 					self.display_frame = cv2.putText(self.display_frame,"{}".format(c.id),(int(c.x+xp),int(c.y+yp)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
-
+		cv2.imwrite(os.path.join(os.getcwd(), 'data', self.name,'labelled_photos','{}.jpg'.format(self.active_frame_info.index)),self.display_frame)
 
 	@pyqtSlot()
 	def update_list_of_behaviors(self):
@@ -310,7 +339,6 @@ class MainWindow(QMainWindow):
 
 		self.active_frame_info.behavior_list = self.behavior_selector_widget.list_of_behaviors
 		self.active_frame_info.position_list = [[e.id, e.x, e.y] for e in self.active_frame_info.list_of_contour_points]
-
 
 	def update_raw_image(self, tracking):
 		self.active_frame_info = self.video_information.get_frame_list()[self.currentFrame-1]
@@ -407,6 +435,7 @@ class MainWindow(QMainWindow):
 					'solidity':self.solidity,'extent':self.extent, 'aspect':self.aspect, 'arc':self.arc,'bg':self.bg,
 					'video_address':self.video_address, 'n_patches':self.n_patches, 'n_animals':self.n_animals,
 					'n_frames':self.n_frames, 'bowl_mask':self.bowl_mask, 'food_patch_mask':self.food_patch_mask, 'mask_centroid':self.mask_centroid}
+		self.make_data_folder()
 		self.get_cap()
 		self.behavior_selector_widget.adjust_size_widgets(self.n_animals)
 		self._get_spaced_frames(self.n_frames)
