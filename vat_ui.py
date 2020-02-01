@@ -9,7 +9,7 @@ import pickle
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot, QObject
 from PyQt5.QtGui import QIcon, QImage, QPixmap
-from PyQt5.QtWidgets import QSpacerItem, QProgressDialog, QDialog, QWidget,QApplication, QMainWindow, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QLineEdit, QMenu, QAction, QSpinBox, QGridLayout, QFileDialog
+from PyQt5.QtWidgets import QSpacerItem, QProgressDialog, QDialog, QWidget,QApplication, QMainWindow, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QLineEdit, QMenu, QAction, QSpinBox, QGridLayout, QFileDialog, QCheckBox
 
 
 class ExperimentConfigWindow(QDialog):
@@ -26,10 +26,24 @@ class ExperimentConfigWindow(QDialog):
 		self.pb4 = QPushButton("Define Food Patches")
 		self.pb5 = QPushButton("Set Thresholds")
 
+		self.l6 = QLabel('Chamber D (mm)')
+		self.sp6 = QSpinBox()
+		self.sp6.setMinimum(1)
+		self.sp6.setMaximum(500)
+		self.sp6.setValue(100)
 		self.l7 = QLabel('N Animals')
 		self.sp7 = QSpinBox()
 		self.l8 = QLabel('N Frames')
 		self.sp8 = QSpinBox()
+		self.l9 = QLabel("N Species")
+		self.sp9 = QSpinBox()
+		self.sp9.setValue(1)
+
+		self.l10 = QLabel('Include Sex Info')
+		self.cb10 = QCheckBox()
+
+		self.l11 = QLabel('Include Courting Partner')
+		self.cb11 = QCheckBox()
 
 		self.savepb = QPushButton('Apply Configuration')
 
@@ -66,15 +80,23 @@ class ExperimentConfigWindow(QDialog):
 		self.grid.addWidget(self.pb4, 4, 1)
 		self.grid.addWidget(self.indicator_label4,5,0)
 		self.grid.addWidget(self.pb5, 5, 1)
-		# self.grid.addWidget(self.indicator_label5,6,0)
-		# self.grid.addWidget(self.pb6, 6, 1)
+
+		self.grid.addWidget(self.l6, 6, 0)
+		self.grid.addWidget(self.sp6, 6, 1)
 		self.grid.addWidget(self.l7, 7, 0)
-		self.grid.addWidget(self.l8, 8, 0)
 		self.grid.addWidget(self.sp7, 7, 1)
-		self.grid.addWidget(self.sp8, 8, 1)
-		self.grid.addWidget(self.savepb, 9, 1)
+		self.grid.addWidget(self.l8, 8, 0)
+		self.grid.addWidget(self.sp8,8, 1)
+		self.grid.addWidget(self.l9, 9, 0)
+		self.grid.addWidget(self.sp9, 9, 1)
+
+		self.grid.addWidget(self.l10, 10,0)
+		self.grid.addWidget(self.cb10, 10,1)
+		self.grid.addWidget(self.l11, 11,0)
+		self.grid.addWidget(self.cb11, 11,1)
+		self.grid.addWidget(self.savepb, 12, 1)
 		self.setLayout(self.grid)
-		self.resize(300, 300)
+		self.resize(380, 380)
 		self.setFixedSize(self.size())
 		self.setWindowTitle('Experiment Configuration')
 		self.savepb.clicked.connect(self.store_values)
@@ -128,19 +150,24 @@ class ExperimentConfigWindow(QDialog):
 		self.thresh, self.small, self.large, self.solidity, self.extent, self.aspect, self.arc = thresholder.get_values()
 		self.indicator_label4.setStyleSheet('background-color: green')
 
-
 	def store_values(self):
 		self.n_patches = int(self.sp3.value())
+		self.chamber_d = int(self.sp6.value())
 		self.n_animals = int(self.sp7.value())
 		self.n_frames = int(self.sp8.value())
+		self.n_species = int(self.sp9.value())
+		self.include_sex = self.cb10.isChecked()
+		self.include_courting_partner = self.cb11.isChecked()
 		self.got_values.emit(1)
 		self.close()
 		return None
 
 	def get_values(self):
-		height = self.food_patch_mask.shape[0]
-		self.food_patch_mask = self.food_patch_mask[:, int(self.mask_centroid[0]-(height/2)):int(self.mask_centroid[0]+(height/2)),:]
-		return self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc, self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid
+		if self.food_patch_mask is not None:
+			height = self.food_patch_mask.shape[0]
+			self.food_patch_mask = self.food_patch_mask[:, int(self.mask_centroid[0]-(height/2)):int(self.mask_centroid[0]+(height/2)),:]
+		return self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc, self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid, self.include_sex, self.n_species, self.chamber_d, self.include_courting_partner
+
 
 class BGCalculator(QObject):
 	progressChanged = pyqtSignal(int)
@@ -183,6 +210,7 @@ class BGCalculator(QObject):
 class MainWindow(QMainWindow):
 	frameTuple = pyqtSignal(int, int)
 	update_combos = pyqtSignal()
+	log_now = pyqtSignal()
 	def __init__(self, parent=None):
 		super(MainWindow, self).__init__(parent)
 		self.experiment_configurator = ExperimentConfigWindow()
@@ -202,7 +230,6 @@ class MainWindow(QMainWindow):
 		fileMenu = menubar.addMenu('File')
 		fileMenu.addAction(newAct)
 
-
 		saveAct = QAction('Save Analysis', self)
 		saveAct.triggered.connect(self.save_analysis)
 		fileMenu.addAction(saveAct)
@@ -211,6 +238,7 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.newListofBehaviors.connect(self.update_list_of_behaviors)
 		self.behavior_selector_widget.fix_now.connect(self.fix_tracking)
 		self.behavior_selector_widget.signal_save.connect(self.save_to_cache)
+		self.image_widget.signal_save.connect(self.send_log_now)
 		self.tracking_fixer.split_read.connect(self.split_read)
 		self.tracking_fixer.remove_read.connect(self.remove_read)
 		self.tracking_fixer.add_read.connect(self.add_read)
@@ -221,7 +249,7 @@ class MainWindow(QMainWindow):
 		self.frameLabel = '{} / {}'.format(self.currentFrame+1, self.n_frames)
 		self.mainWidgetShowsTrack = True
 		self.colorMap = [(153,255,153),(204,255,153),(255,153,255),(204,153,255),(51,51,255),(51,153,255),(51,255,255),(51,255,153),(255,51,255),(153,51,255),(153,153,255),(153,204,255),(255,255,153),(255,204,153),(255,153,204),(51,255,51),(153,255,51),(255,255,51),(255,153,51),(255,51,51),(255,51,153),(153,255,255),(153,255,204),(0,0,204),(0,204,102),(204,204,0),(204,102,0),(153,153,0),(0,204,0),(153,0,153)]
-		self.setFixedSize(1200,1000)
+		self.setFixedSize(1250,1000)
 
 	def save_analysis(self):
 		with open(os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name)), 'wb') as f:
@@ -230,6 +258,10 @@ class MainWindow(QMainWindow):
 		dw = vu.DataWriter(picklename)
 		dw.make_rows()
 		dw.write_csv()
+
+	@pyqtSlot()
+	def send_log_now(self):
+		self.log_now.emit()
 
 	def make_data_folder(self):
 		if 'data' not in os.listdir(os.getcwd()):
@@ -339,6 +371,7 @@ class MainWindow(QMainWindow):
 
 		self.active_frame_info.behavior_list = self.behavior_selector_widget.list_of_behaviors
 		self.active_frame_info.position_list = [[e.id, e.x, e.y] for e in self.active_frame_info.list_of_contour_points]
+		print(self.active_frame_info.behavior_list)
 
 	def update_raw_image(self, tracking):
 		self.active_frame_info = self.video_information.get_frame_list()[self.currentFrame-1]
@@ -430,13 +463,15 @@ class MainWindow(QMainWindow):
 		self.cap = cv2.VideoCapture(self.video_address)
 
 	def load_info(self):
-		self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc,self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid = self.experiment_configurator.get_values()
+		self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc,self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid, self.include_sex, self.n_species, self.chamber_d, self.include_courting_partner = self.experiment_configurator.get_values()
 		metadata = {'thresh':self.thresh,'large':self.large, 'small':self.small,
 					'solidity':self.solidity,'extent':self.extent, 'aspect':self.aspect, 'arc':self.arc,'bg':self.bg,
 					'video_address':self.video_address, 'n_patches':self.n_patches, 'n_animals':self.n_animals,
-					'n_frames':self.n_frames, 'bowl_mask':self.bowl_mask, 'food_patch_mask':self.food_patch_mask, 'mask_centroid':self.mask_centroid}
+					'n_frames':self.n_frames, 'bowl_mask':self.bowl_mask, 'food_patch_mask':self.food_patch_mask, 'mask_centroid':self.mask_centroid,
+					'include_sex':self.include_sex, 'n_species':self.n_species, 'chamber_d':self.chamber_d, 'include_courting_partner':self.include_courting_partner}
 		self.make_data_folder()
 		self.get_cap()
+		self.behavior_selector_widget.set_include_sex_and_species(self.include_sex, self.n_species, self.include_courting_partner)
 		self.behavior_selector_widget.adjust_size_widgets(self.n_animals)
 		self._get_spaced_frames(self.n_frames)
 		self.currentFrameIndex = self.frameIdxs[0]
@@ -523,51 +558,121 @@ class BehaviorSelectorWidget(QWidget):
 		self.vbox.addSpacerItem(self.spacer)
 		self.setLayout(self.vbox)
 		self.parent().update_combos.connect(self.update_comboboxes)
+		self.parent().log_now.connect(self.log_entries)
 		self.mw = self.parent()
+		self.list_of_comboboxes = []
+		self.list_of_scomboboxes = []
+		self.list_of_spcomboboxes = []
+		self.list_of_cpcomboboxes = []
+
+	def set_include_sex_and_species(self, include_sex, n_species, include_courting_partner):
+		self.include_sex = include_sex
+		self.n_species = n_species
+		self.include_courting_partner = include_courting_partner
 
 	@pyqtSlot()
 	def update_comboboxes(self):
 		if self.mw.active_frame_info.saved:
 			sexes = [e[0] for e in self.mw.active_frame_info.behavior_list]
-			behaviors = [e[1] for e in self.mw.active_frame_info.behavior_list]
+			species = [e[1] for e in self.mw.active_frame_info.behavior_list]
+			behaviors = [e[2] for e in self.mw.active_frame_info.behavior_list]
+			courting_partner = [e[3] for e in self.mw.active_frame_info.behavior_list]
 
 			for idx, cbb in enumerate(self.list_of_comboboxes):
 				index = cbb.findText(behaviors[idx], QtCore.Qt.MatchFixedString)
 				if index >= 0:
 					cbb.setCurrentIndex(index)
-			for idx, scbb in enumerate(self.list_of_scomboboxes):
-				index = scbb.findText(sexes[idx], QtCore.Qt.MatchFixedString)
-				if index >= 0:
-					scbb.setCurrentIndex(index)
+			if self.include_sex:
+				for idx, scbb in enumerate(self.list_of_scomboboxes):
+					index = scbb.findText(sexes[idx], QtCore.Qt.MatchFixedString)
+					if index >= 0:
+						scbb.setCurrentIndex(index)
+			if self.n_species>1:
+				for idx, spcbb in enumerate(self.list_of_spcomboboxes):
+					index = spcbb.findText(species[idx], QtCore.Qt.MatchFixedString)
+					if index >= 0:
+						spcbb.setCurrentIndex(index)
+			if self.include_courting_partner:
+				for idx, cpcbb in enumerate(self.list_of_cpcomboboxes):
+					index = cpcbb.findText(courting_partner[idx], QtCore.Qt.MatchFixedString)
+					if index >= 0:
+						cpcbb.setCurrentIndex(index)
 		else:
 			for idx, cbb in enumerate(self.list_of_comboboxes):
 				cbb.setCurrentIndex(0)
-				self.list_of_scomboboxes[idx].setCurrentIndex(0)
+				if self.include_sex:
+					self.list_of_scomboboxes[idx].setCurrentIndex(0)
+				if self.n_species > 1:
+					self.list_of_spcomboboxes[idx].setCurrentIndex(0)
+				if self.include_courting_partner:
+					self.list_of_cpcomboboxes[idx].setCurrentIndex(0)
 
 	def adjust_size_widgets(self, n_individuals):
-		self.list_of_comboboxes = []
-		self.list_of_scomboboxes = []
+
 		n_individuals = min(n_individuals, 25)
+
+		# label_box = QHBoxLayout()
+		# if self.include_sex:
+		# 	sex_spin = QComboBox()
+		# 	sex_spin.addItem('Sex')
+		#
+		# if self.include_courting_partner:
+		# 	court_spin = QComboBox()
+		# 	court_spin.addItem('Mate')
+		#
+		# if self.n_species > 1:
+		# 	species_spin = QComboBox()
+		# 	species_spin.addItem('Spc')
+		#
+		# behavior_spin = QComboBox()
+		# behavior_spin.addItem('Behavior')
+		#
+		# label_box.addWidget(QLabel('Key'))
+		# label_box.addWidget(sex_spin)
+		# label_box.addWidget(species_spin)
+		# label_box.addWidget(behavior_spin)
+		# label_box.addWidget(court_spin)
+		#
+		# self.vbox.addLayout(label_box)
+
 		for i in range(n_individuals):
 			label = QLabel()
 			label.setText('{}'.format(i+1))
-
-			scombo = QComboBox(self)
-			scombo.addItem('-')
-			scombo.addItem('F')
-			scombo.addItem('M')
-
+			if self.include_sex:
+				scombo = QComboBox(self)
+				scombo.addItem('-')
+				scombo.addItem('F')
+				scombo.addItem('M')
+			if self.n_species > 1:
+				spcombo = QComboBox(self)
+				spcombo.addItem('-')
+				for j in range(self.n_species):
+					spcombo.addItem('{}'.format(j+1))
+			if self.include_courting_partner:
+				cpcombo = QComboBox(self)
+				cpcombo.addItem('-')
+				for k in range(n_individuals):
+					if k!=i:
+						cpcombo.addItem('{}'.format(k+1))
 			combo = QComboBox(self)
 			combo.addItem("Nothing")
 			combo.addItem("Courting")
 			combo.addItem("Copulation")
 			hbox = QHBoxLayout()
 			hbox.addWidget(label)
-			hbox.addWidget(scombo)
+			if self.include_sex:
+				hbox.addWidget(scombo)
+				self.list_of_scomboboxes.append(scombo)
+			if self.n_species > 1:
+				hbox.addWidget(spcombo)
+				self.list_of_spcomboboxes.append(spcombo)
 			hbox.addWidget(combo)
+			if self.include_courting_partner:
+				hbox.addWidget(cpcombo)
+				self.list_of_cpcomboboxes.append(cpcombo)
 			self.list_of_comboboxes.append(combo)
-			self.list_of_scomboboxes.append(scombo)
 			self.vbox.addLayout(hbox)
+
 		self.saveButton = QPushButton('Save')
 		self.toggleButton = QPushButton('Toggle Tracking')
 		self.fixButton = QPushButton('Fix Tracking')
@@ -599,16 +704,31 @@ class BehaviorSelectorWidget(QWidget):
 	def toggle_track(self):
 		self.toggleTrack.emit()
 
+	@pyqtSlot()
 	def log_entries(self):
 		self.list_of_behaviors = []
 		for idx, i in enumerate(self.list_of_comboboxes):
-			self.list_of_behaviors.append([str(self.list_of_scomboboxes[idx].currentText()), str(i.currentText())])
+			if self.include_sex:
+				sex = str(self.list_of_scomboboxes[idx].currentText())
+			else:
+				sex = None
+			if self.n_species > 1:
+				species = str(self.list_of_spcomboboxes[idx].currentText())
+			else:
+				species = None
+			if self.include_courting_partner:
+				partner = str(self.list_of_cpcomboboxes[idx].currentText())
+			else:
+				partner = None
+			behavior = str(i.currentText())
+			self.list_of_behaviors.append([sex, species, behavior, partner])
 		self.newListofBehaviors.emit()
 		self.signal_save.emit()
 		return None
 
 class ImageWidget(QWidget):
 	request_frame_status = pyqtSignal(str)
+	signal_save = pyqtSignal()
 	def __init__(self, parent):
 		super(ImageWidget, self).__init__(parent)
 		vbox = QVBoxLayout()
@@ -636,10 +756,14 @@ class ImageWidget(QWidget):
 		self.parent().frameTuple.connect(self.updateFrameLabel)
 
 	def increment_frame_count(self):
+		self.signal_save.emit()
 		self.request_frame_status.emit('inc')
 
+
 	def decrement_frame_count(self):
+		self.signal_save.emit()
 		self.request_frame_status.emit('dec')
+
 
 	@pyqtSlot(int, int)
 	def updateFrameLabel(self, v1, v2):

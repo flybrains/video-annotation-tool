@@ -278,7 +278,9 @@ class DataWriter(object):
 
 
 	def _get_patch_info(self,patch, x,y):
-		if patch[int(x),int(y)]==255:
+		if patch is None:
+			return False, None
+		elif patch[int(x),int(y)]==255:
 			status = True
 		else:
 			status = False
@@ -333,7 +335,8 @@ class DataWriter(object):
 		self.max_len = self._scan_for_longest_dist_tuple(self.videoinfo)
 		self.foodpatch_mask = self.videoinfo.metadata['food_patch_mask']
 		self.rows = []
-		self.foodpatch_mask = cv2.cvtColor(self.foodpatch_mask, cv2.COLOR_BGR2GRAY)
+		if self.foodpatch_mask is not None:
+			self.foodpatch_mask = cv2.cvtColor(self.foodpatch_mask, cv2.COLOR_BGR2GRAY)
 
 		for frame_info in self.videoinfo.get_frame_list():
 			frame_idx = frame_info.index
@@ -372,7 +375,7 @@ class DataWriter(object):
 				self.header.append('{}th_closest_id'.format(i+1))
 
 	def write_csv(self):
-		address = pickle_name.split('.')[0]+'.csv'
+		address = self.pickle_name.split('.')[0]+'.csv'
 
 		with open(address, 'w') as f:
 			mywriter = csv.writer(f, delimiter=',')
