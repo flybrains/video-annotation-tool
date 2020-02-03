@@ -331,9 +331,31 @@ class DataWriter(object):
 	def _scan_for_longest_dist_tuple(self, videoinfo):
 		return max([len(e.list_of_contour_points) for e in videoinfo.get_frame_list()])
 
+	def _get_dish_width(self):
+		max_spread = 0
+		for row in range(int(self.bowl_mask.shape[0]/2)):
+			try:
+				row_only = self.bowl_mask[row*2,:]
+				where_white = list(np.greater(row_only, 0))
+				first = where_white.index(True)
+				f_where_white =  [e for e in reversed(where_white)]
+				last = len(where_white) - f_where_white.index(True)
+				spread = last - first
+				if spread > max_spread:
+					max_spread = spread
+			except ValueError:
+				pass
+		self.dish_width = max_spread
+
 	def make_rows(self):
 		self.max_len = self._scan_for_longest_dist_tuple(self.videoinfo)
 		self.foodpatch_mask = self.videoinfo.metadata['food_patch_mask']
+		self.diameter_mm = self.videoinfo.metadata['chamber_d']
+		self.bowl_mask = cv2.cvtColor(self.videoinfo.metadata['bowl_mask'], cv2.COLOR_BGR2GRAY)
+		self._get_dish_width()
+
+		self.conversion_factor = float(self.diameter_mm/self.dish_width)
+
 		self.rows = []
 		if self.foodpatch_mask is not None:
 			self.foodpatch_mask = cv2.cvtColor(self.foodpatch_mask, cv2.COLOR_BGR2GRAY)
@@ -341,24 +363,42 @@ class DataWriter(object):
 		for frame_info in self.videoinfo.get_frame_list():
 			frame_idx = frame_info.index
 			video_idx = frame_info.frameNo
+
+			# print('------')
+			# print(frame_idx)
+			# print(frame_info.behavior_list)
+			# print(frame_info.list_of_contour_points)
+
 			for idx, pt in enumerate(frame_info.list_of_contour_points):
 
 				id, x, y = pt.id, pt.x, pt.y
 				sex = frame_info.behavior_list[idx][0]
-				behavior = frame_info.behavior_list[idx][1]
-				row = [frame_idx, video_idx, id, sex, behavior]
+				behavior = frame_info.behavior_list[idx][2]
+				species = frame_info.behavior_list[idx][1]
+				courting_partner = frame_info.behavior_list[idx][3]
+				row = [frame_idx, video_idx, id, sex, species, behavior, courting_partner]
 
 				patch_status, dist_to_closest_patch = self._get_patch_info(self.foodpatch_mask,x,y)
 				sorted_dists, sorted_ids = self._get_sorted_dists(frame_info, id)
 				row.append(patch_status)
-				row.append(dist_to_closest_patch)
-				row.append(x)
-				row.append(y)
+				try:
+					row.append(dist_to_closest_patch*self.conversion_factor)
+					row.append(x*self.conversion_factor)
+					row.append(y*self.conversion_factor)
+				except TypeError:
+					row.append(dist_to_closest_patch)
+					row.append(x)
+					row.append(y)
+
 				for i in range(len(sorted_dists)):
-					row.append(sorted_dists[i])
-					row.append(sorted_ids[i])
+					try:
+						row.append(sorted_dists[i]*self.conversion_factor)
+						row.append(sorted_ids[i])
+					except TypeError:
+						row.append(sorted_dists[i])
+						row.append(sorted_ids[i])
 				self.rows.append(row)
-		self.header = ['labelled_frame', 'video_frame', 'animal_id', "sex", "behavior", 'on_patch', 'dist_to_closest_patch_centroid','x_pos','y_pos']
+		self.header = ['labelled_frame', 'video_frame', 'animal_id', "sex", "species", "behavior", "courting_partner", 'on_patch', 'dist_to_closest_patch_centroid','x_pos','y_pos']
 
 		for i in range(len(sorted_dists)):
 			if i==0:

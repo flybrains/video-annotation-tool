@@ -9,8 +9,20 @@ import pickle
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot, QObject
 from PyQt5.QtGui import QIcon, QImage, QPixmap
-from PyQt5.QtWidgets import QSpacerItem, QProgressDialog, QDialog, QWidget,QApplication, QMainWindow, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QLineEdit, QMenu, QAction, QSpinBox, QGridLayout, QFileDialog, QCheckBox
+from PyQt5.QtWidgets import QMessageBox, QSpacerItem, QProgressDialog, QDialog, QWidget,QApplication, QMainWindow, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QLineEdit, QMenu, QAction, QSpinBox, QGridLayout, QFileDialog, QCheckBox
 
+class ErrorMsg(QMessageBox):
+	def __init__(self, msg, parent=None):
+		super(ErrorMsg, self).__init__(parent)
+		self.setIcon(QMessageBox.Critical)
+		self.setText(msg)
+		self.setWindowTitle('Error')
+
+class WarningMsg(QMessageBox):
+	def __init__(self, msg, parent=None):
+		super(WarningMsg, self).__init__(parent)
+		self.setText(msg)
+		self.setWindowTitle('Warning')
 
 class ExperimentConfigWindow(QDialog):
 	got_values = pyqtSignal(int)
@@ -33,11 +45,14 @@ class ExperimentConfigWindow(QDialog):
 		self.sp6.setValue(100)
 		self.l7 = QLabel('N Animals')
 		self.sp7 = QSpinBox()
+		self.sp7.setMinimum(1)
 		self.l8 = QLabel('N Frames')
 		self.sp8 = QSpinBox()
+		self.sp8.setMinimum(1)
+		self.sp6.setMaximum(1000)
 		self.l9 = QLabel("N Species")
 		self.sp9 = QSpinBox()
-		self.sp9.setValue(1)
+		self.sp9.setMinimum(1)
 
 		self.l10 = QLabel('Include Sex Info')
 		self.cb10 = QCheckBox()
@@ -117,38 +132,57 @@ class ExperimentConfigWindow(QDialog):
 		return None
 
 	def define_bowl_mask(self):
-		ed = vu.EllipseDrawer(self.video_address)
-		ed.define_bowl_mask()
-		self.bowl_mask, self.mask_centroid = ed.get_bowl_mask()
-		self.indicator_label2.setStyleSheet('background-color: green')
+		try:
+			ed = vu.EllipseDrawer(self.video_address)
+			ed.define_bowl_mask()
+			self.bowl_mask, self.mask_centroid = ed.get_bowl_mask()
+			self.indicator_label2.setStyleSheet('background-color: green')
+		except AttributeError:
+			msg = 'Make sure a valid video is selected'
+			self.error = ErrorMsg(msg)
+			self.error.show()
 
 	def define_food_patch(self, patches):
-		ed = vu.EllipseDrawer(self.video_address)
-		self.n_food_patch = int(self.sp3.value())
-		if self.n_food_patch==0:
-			self.food_patch_mask=None
-		else:
-			ed.define_food_patches(self.n_food_patch)
-			self.food_patch_mask = ed.get_food_patches()
-		self.indicator_label3.setStyleSheet('background-color: green')
+		try:
+			ed = vu.EllipseDrawer(self.video_address)
+			self.n_food_patch = int(self.sp3.value())
+			if self.n_food_patch==0:
+				self.food_patch_mask=None
+			else:
+				ed.define_food_patches(self.n_food_patch)
+				self.food_patch_mask = ed.get_food_patches()
 
-		self.bg_progress_window = QProgressDialog(self)
-		self.bg_progress_window.hide()
-		self.bg_progress_window.setLabelText('Computing Average Background Features')
-		thread = QThread(self)
-		thread.start()
-		self.bgc = BGCalculator()
-		self.start_bg_comp.connect(self.bgc.calculateBGwithProgress)
-		self.bgc.progressChanged.connect(self.bg_progress_window.setValue)
-		self.bgc.finished.connect(self.on_finished)
-		self.bgc.started.connect(self.bg_progress_window.show)
-		self.bgc.moveToThread(thread)
-		self.start_bg_comp.emit(self.video_address, self.mask_centroid[0])
+			self.indicator_label3.setStyleSheet('background-color: green')
+			self.bg_progress_window = QProgressDialog(self)
+			self.bg_progress_window.hide()
+			self.bg_progress_window.setLabelText('Computing Average Background Features')
+			thread = QThread(self)
+			thread.start()
+			self.bgc = BGCalculator()
+			self.start_bg_comp.connect(self.bgc.calculateBGwithProgress)
+			self.bgc.progressChanged.connect(self.bg_progress_window.setValue)
+			self.bgc.finished.connect(self.on_finished)
+			self.bgc.started.connect(self.bg_progress_window.show)
+			self.bgc.moveToThread(thread)
+			self.start_bg_comp.emit(self.video_address, self.mask_centroid[0])
+		except AttributeError:
+			msg = 'Make sure a valid video is selected and chamber is defined'
+			self.error = ErrorMsg(msg)
+			self.error.show()
+
+
 
 	def define_thresholds(self):
-		thresholder = vu.Thresholder(self.video_address, self.bg, self.mask_centroid[0], self.bowl_mask)
-		self.thresh, self.small, self.large, self.solidity, self.extent, self.aspect, self.arc = thresholder.get_values()
-		self.indicator_label4.setStyleSheet('background-color: green')
+		try:
+			thresholder = vu.Thresholder(self.video_address, self.bg, self.mask_centroid[0], self.bowl_mask)
+			self.thresh, self.small, self.large, self.solidity, self.extent, self.aspect, self.arc = thresholder.get_values()
+			self.indicator_label4.setStyleSheet('background-color: green')
+		except AttributeError:
+			msg = 'Chamber and food patches must be defined before setting thresholds'
+			self.error = ErrorMsg(msg)
+			self.error.show()
+
+
 
 	def store_values(self):
 		self.n_patches = int(self.sp3.value())
@@ -158,8 +192,17 @@ class ExperimentConfigWindow(QDialog):
 		self.n_species = int(self.sp9.value())
 		self.include_sex = self.cb10.isChecked()
 		self.include_courting_partner = self.cb11.isChecked()
-		self.got_values.emit(1)
-		self.close()
+
+
+		try:
+			self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc, self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid, self.include_sex, self.n_species, self.chamber_d, self.include_courting_partner
+			self.close()
+			self.got_values.emit(1)
+		except AttributeError:
+			msg = 'Make sure all parameters are defined even if they are not important for present trial'
+			self.error = ErrorMsg(msg)
+			self.error.show()
+
 		return None
 
 	def get_values(self):
@@ -167,7 +210,6 @@ class ExperimentConfigWindow(QDialog):
 			height = self.food_patch_mask.shape[0]
 			self.food_patch_mask = self.food_patch_mask[:, int(self.mask_centroid[0]-(height/2)):int(self.mask_centroid[0]+(height/2)),:]
 		return self.thresh, self.large, self.small,self.solidity, self.extent, self.aspect, self.arc, self.bg, self.video_address, self.n_patches, self.n_animals, self.n_frames, self.bowl_mask, self.food_patch_mask, self.mask_centroid, self.include_sex, self.n_species, self.chamber_d, self.include_courting_partner
-
 
 class BGCalculator(QObject):
 	progressChanged = pyqtSignal(int)
@@ -250,14 +292,54 @@ class MainWindow(QMainWindow):
 		self.mainWidgetShowsTrack = True
 		self.colorMap = [(153,255,153),(204,255,153),(255,153,255),(204,153,255),(51,51,255),(51,153,255),(51,255,255),(51,255,153),(255,51,255),(153,51,255),(153,153,255),(153,204,255),(255,255,153),(255,204,153),(255,153,204),(51,255,51),(153,255,51),(255,255,51),(255,153,51),(255,51,51),(255,51,153),(153,255,255),(153,255,204),(0,0,204),(0,204,102),(204,204,0),(204,102,0),(153,153,0),(0,204,0),(153,0,153)]
 		self.setFixedSize(1250,1000)
+		self.warned = False
 
+
+	def check_and_warn(self):
+		if self.warned==False:
+			frame_warn = False
+			id_warn = False
+			warning = []
+
+			for frame in self.video_information.get_frame_list():
+				if id_warn == True:
+					pass
+				else:
+					if len(frame.list_of_contour_points)<self.n_animals:
+						id_warn = True
+						warning.append('There are frames where the number of tracked animals is less than {}'.format(self.n_animals))
+
+				if frame.list_of_contour_points==[] and frame_warn == False:
+					frame_warn = True
+					warning.append('There are frames that were not visited')
+			msg=''
+			for warn in warning:
+				msg = msg + warn + '\n\n'
+			msg = msg + 'You may still save, but the unvisited frames will not be represented in the output CSV'
+			if frame_warn or id_warn:
+				self.warning = WarningMsg(msg)
+				self.warning.show()
+			self.warned = True
 	def save_analysis(self):
-		with open(os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name)), 'wb') as f:
-			pickle.dump(self.video_information, f)
-		picklename = os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name))
-		dw = vu.DataWriter(picklename)
-		dw.make_rows()
-		dw.write_csv()
+		try:
+			self.name
+
+			self.check_and_warn()
+
+			if self.active_frame_info.saved==False:
+				self.send_log_now()
+
+			with open(os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name)), 'wb') as f:
+				pickle.dump(self.video_information, f)
+			picklename = os.path.join(os.getcwd(), 'data','{}/{}.pkl'.format(self.name,self.name))
+			dw = vu.DataWriter(picklename)
+			dw.make_rows()
+			dw.write_csv()
+
+		except AttributeError:
+			msg = 'You must configure a new experiment in order to save'
+			self.error = ErrorMsg(msg)
+			self.error.show()
 
 	@pyqtSlot()
 	def send_log_now(self):
@@ -370,8 +452,8 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.saved_indicator.setStyleSheet('background-color: green')
 
 		self.active_frame_info.behavior_list = self.behavior_selector_widget.list_of_behaviors
+		#print(self.active_frame_info.behavior_list)
 		self.active_frame_info.position_list = [[e.id, e.x, e.y] for e in self.active_frame_info.list_of_contour_points]
-		print(self.active_frame_info.behavior_list)
 
 	def update_raw_image(self, tracking):
 		self.active_frame_info = self.video_information.get_frame_list()[self.currentFrame-1]
@@ -381,9 +463,7 @@ class MainWindow(QMainWindow):
 		else:
 			self.behavior_selector_widget.saved_indicator.setStyleSheet('background-color: red')
 
-
 		self.update_combos.emit()
-
 
 		self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.currentFrameIndex)
 		_, self.currentRawImage = self.cap.read()
@@ -401,6 +481,9 @@ class MainWindow(QMainWindow):
 	def toggle_image(self):
 
 		if self.mainWidgetShowsTrack==True:
+			# self.update_list_of_behaviors()
+			# self.save_to_cache()
+			self.log_now.emit()
 			self.update_raw_image(False)
 			self.mainWidgetShowsTrack=False
 		else:
@@ -409,6 +492,7 @@ class MainWindow(QMainWindow):
 
 	@pyqtSlot(int)
 	def split_read(self, read_to_split):
+		self.log_now.emit()
 		self.highest_index = len(self.active_frame_info.list_of_contour_points)
 		self.rts = self.active_frame_info.list_of_contour_points[read_to_split]
 		if self.highest_index < self.n_animals:
@@ -421,6 +505,7 @@ class MainWindow(QMainWindow):
 
 	@pyqtSlot()
 	def add_read(self):
+		self.log_now.emit()
 		if len(self.active_frame_info.list_of_contour_points) < self.n_animals:
 			self.point_adder = vu.PointAdder(self.currentRawImage)
 			self.point_adder.define_point_location()
@@ -440,6 +525,7 @@ class MainWindow(QMainWindow):
 
 	@pyqtSlot(int)
 	def remove_read(self, read_to_remove):
+		self.log_now.emit()
 		if len(self.active_frame_info.list_of_contour_points) > 0:
 			temp = [e for e in self.active_frame_info.list_of_contour_points if e.id!=read_to_remove]
 			self.active_frame_info.list_of_contour_points = temp
@@ -611,29 +697,6 @@ class BehaviorSelectorWidget(QWidget):
 
 		n_individuals = min(n_individuals, 25)
 
-		# label_box = QHBoxLayout()
-		# if self.include_sex:
-		# 	sex_spin = QComboBox()
-		# 	sex_spin.addItem('Sex')
-		#
-		# if self.include_courting_partner:
-		# 	court_spin = QComboBox()
-		# 	court_spin.addItem('Mate')
-		#
-		# if self.n_species > 1:
-		# 	species_spin = QComboBox()
-		# 	species_spin.addItem('Spc')
-		#
-		# behavior_spin = QComboBox()
-		# behavior_spin.addItem('Behavior')
-		#
-		# label_box.addWidget(QLabel('Key'))
-		# label_box.addWidget(sex_spin)
-		# label_box.addWidget(species_spin)
-		# label_box.addWidget(behavior_spin)
-		# label_box.addWidget(court_spin)
-		#
-		# self.vbox.addLayout(label_box)
 
 		for i in range(n_individuals):
 			label = QLabel()
@@ -711,15 +774,15 @@ class BehaviorSelectorWidget(QWidget):
 			if self.include_sex:
 				sex = str(self.list_of_scomboboxes[idx].currentText())
 			else:
-				sex = None
+				sex = '-'
 			if self.n_species > 1:
 				species = str(self.list_of_spcomboboxes[idx].currentText())
 			else:
-				species = None
+				species = '-'
 			if self.include_courting_partner:
 				partner = str(self.list_of_cpcomboboxes[idx].currentText())
 			else:
-				partner = None
+				partner = '-'
 			behavior = str(i.currentText())
 			self.list_of_behaviors.append([sex, species, behavior, partner])
 		self.newListofBehaviors.emit()
