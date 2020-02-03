@@ -452,7 +452,6 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.saved_indicator.setStyleSheet('background-color: green')
 
 		self.active_frame_info.behavior_list = self.behavior_selector_widget.list_of_behaviors
-		#print(self.active_frame_info.behavior_list)
 		self.active_frame_info.position_list = [[e.id, e.x, e.y] for e in self.active_frame_info.list_of_contour_points]
 
 	def update_raw_image(self, tracking):
@@ -500,8 +499,9 @@ class MainWindow(QMainWindow):
 			self.active_frame_info.add_contour_point(new_contour_pt)
 			self.update_raw_image(True)
 		else:
-			# Error message
-			pass
+			msg = 'Splitting read will exceed number of individuals, revise tracking before splitting'
+			self.error = ErrorMsg(msg)
+			self.error.show()
 
 	@pyqtSlot()
 	def add_read(self):
@@ -520,8 +520,10 @@ class MainWindow(QMainWindow):
 			self.update_raw_image(True)
 
 		else:
-			# Error message
-			pass
+			msg = 'Adding read will exceed number of individuals, revise tracking before splitting'
+			self.error = ErrorMsg(msg)
+			self.error.show()
+
 
 	@pyqtSlot(int)
 	def remove_read(self, read_to_remove):
@@ -533,8 +535,9 @@ class MainWindow(QMainWindow):
 				e.id = idx+1
 			self.update_raw_image(True)
 		else:
-			# Error message
-			pass
+			msg = 'No reads to remove'
+			self.error = ErrorMsg(msg)
+			self.error.show()
 
 	def _get_spaced_frames(self, depth):
 		self.frameIdxs = np.linspace(0, int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)), num=depth)
