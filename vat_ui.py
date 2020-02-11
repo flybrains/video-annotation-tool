@@ -276,6 +276,10 @@ class MainWindow(QMainWindow):
 		saveAct.triggered.connect(self.save_analysis)
 		fileMenu.addAction(saveAct)
 
+		loadAct = QAction('Load from Last Break', self)
+		loadAct.triggered.connect(self.load_cache)
+		fileMenu.addAction(loadAct)
+
 		self.behavior_selector_widget.toggleTrack.connect(self.toggle_image)
 		self.behavior_selector_widget.newListofBehaviors.connect(self.update_list_of_behaviors)
 		self.behavior_selector_widget.fix_now.connect(self.fix_tracking)
@@ -293,6 +297,7 @@ class MainWindow(QMainWindow):
 		self.colorMap = [(153,255,153),(204,255,153),(255,153,255),(204,153,255),(51,51,255),(51,153,255),(51,255,255),(51,255,153),(255,51,255),(153,51,255),(153,153,255),(153,204,255),(255,255,153),(255,204,153),(255,153,204),(51,255,51),(153,255,51),(255,255,51),(255,153,51),(255,51,51),(255,51,153),(153,255,255),(153,255,204),(0,0,204),(0,204,102),(204,204,0),(204,102,0),(153,153,0),(0,204,0),(153,0,153)]
 		self.setFixedSize(1250,1000)
 		self.warned = False
+
 
 
 	def check_and_warn(self):
@@ -320,6 +325,7 @@ class MainWindow(QMainWindow):
 				self.warning = WarningMsg(msg)
 				self.warning.show()
 			self.warned = True
+
 	def save_analysis(self):
 		try:
 			self.name
@@ -358,8 +364,44 @@ class MainWindow(QMainWindow):
 
 	@pyqtSlot()
 	def save_to_cache(self):
+		self.video_information.metadata['last_frame'] = self.currentFrame
 		with open(os.path.join(os.getcwd(), 'experiment_cache','cache.pkl'), 'wb') as f:
 			pickle.dump(self.video_information, f)
+
+	def load_cache(self):
+		with open(os.path.join(os.getcwd(), 'experiment_cache','cache.pkl'), 'rb') as f:
+			self.video_information = pickle.load(f)
+			self.currentFrame = 1
+			self.thresh = self.video_information.metadata['thresh']
+			self.bg = self.video_information.metadata['bg']
+			self.large = self.video_information.metadata['large']
+			self.small = self.video_information.metadata['small']
+			self.solidity = self.video_information.metadata['solidity']
+			self.extent = self.video_information.metadata['extent']
+			self.aspect = self.video_information.metadata['aspect']
+			self.arc = self.video_information.metadata['arc']
+			self.video_address = self.video_information.metadata['video_address']
+			self.n_patches = self.video_information.metadata['n_patches']
+			self.n_animals = self.video_information.metadata['n_animals']
+			self.n_frames = self.video_information.metadata['n_frames']
+			self.bowl_mask = self.video_information.metadata['bowl_mask']
+			self.food_patch_mask = self.video_information.metadata['food_patch_mask']
+			self.mask_centroid = self.video_information.metadata['mask_centroid']
+			self.include_sex = self.video_information.metadata['include_sex']
+			self.n_species = self.video_information.metadata['n_species']
+			self.chamber_d = self.video_information.metadata['chamber_d']
+			self.include_courting_partner = self.video_information.metadata['include_courting_partner']
+			self.currentFrame = self.video_information.metadata['last_frame']
+
+		self.make_data_folder()
+		self.get_cap()
+		self.behavior_selector_widget.set_include_sex_and_species(self.include_sex, self.n_species, self.include_courting_partner)
+		self.behavior_selector_widget.adjust_size_widgets(self.n_animals)
+		self._get_spaced_frames(self.n_frames)
+		self.send_frame_status('')
+		self.update_raw_image(True)
+
+
 
 	@pyqtSlot(str)
 	def send_frame_status(self, id):
@@ -479,6 +521,8 @@ class MainWindow(QMainWindow):
 	@pyqtSlot()
 	def toggle_image(self):
 
+		cv2.destroyAllWindows()
+
 		if self.mainWidgetShowsTrack==True:
 			# self.update_list_of_behaviors()
 			# self.save_to_cache()
@@ -564,8 +608,9 @@ class MainWindow(QMainWindow):
 		self.behavior_selector_widget.adjust_size_widgets(self.n_animals)
 		self._get_spaced_frames(self.n_frames)
 		self.currentFrameIndex = self.frameIdxs[0]
-
 		self.video_information = vc.VideoInformation(self.video_address, metadata)
+		self.video_information.metadata['frameIdxs'] = self.frameIdxs
+
 		for i in range(self.n_frames):
 			new_frame = vc.FrameInformation(i+1, self.video_address, self.n_animals, self.frameIdxs[i])
 			self.video_information.add_frame(new_frame)
