@@ -229,14 +229,16 @@ class BGCalculator(QObject):
 		height = frame.shape[0]
 		xl, xr = center-int(height/2), center+int(height/2)
 
-		depth = int(np.floor(cap.get(cv2.CAP_PROP_FRAME_COUNT)/300))
+		#depth = int(np.floor(cap.get(cv2.CAP_PROP_FRAME_COUNT)/200))
+		depth = 80
 		blank = []
 		frameIdxs = np.linspace(0, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)-100), num=depth)
 		frameIdxs = [int(e) for e in frameIdxs]
-
+		frameIdxs = frameIdxs[:-2]
 		self.started.emit()
 
 		for idx,i in enumerate(frameIdxs):
+			cap = cv2.VideoCapture(video_address)
 			cap.set(cv2.CAP_PROP_POS_FRAMES, i)
 			_, frame = cap.read()
 			frame = frame[:,xl:xr,:]
@@ -247,6 +249,7 @@ class BGCalculator(QObject):
 		bg = np.mean(blank, axis=0)
 		bg = bg.astype(np.uint8)
 
+		self.finished.emit(bg)
 		self.finished.emit(bg)
 
 class MainWindow(QMainWindow):
@@ -418,7 +421,7 @@ class MainWindow(QMainWindow):
 
 		self.currentFrameIndex = self.frameIdxs[self.currentFrame-1]
 		if self.currentFrame==self.n_frames:
-			self.currentFrameIndex = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)-6)
+			self.currentFrameIndex = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)-30)
 
 
 		self.frameTuple.emit(self.currentFrame, self.n_frames)

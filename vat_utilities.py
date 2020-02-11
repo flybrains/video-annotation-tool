@@ -64,7 +64,7 @@ class EllipseDrawer(object):
 
 	def _load_video_frame(self):
 		cap = cv2.VideoCapture(self.video_address)
-		frame_no = 1000
+		frame_no = 10
 		cap.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
 		ret, self.frame = cap.read()
 
@@ -141,8 +141,6 @@ class EllipseDrawer(object):
 
 		display_masked = cv2.bitwise_and(self.display_frame, display_bowl_mask)
 		masked = cv2.bitwise_and(self.frame, bowl_mask)
-
-		np.save('/home/patrick/Desktop/mask.npy',self.bowl_mask)
 
 		for i in range(5):
 			x,y = self.points[i][0], self.points[i][1]
