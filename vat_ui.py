@@ -489,7 +489,9 @@ class MainWindow(QMainWindow):
 				else:
 					self.display_frame = cv2.circle(self.display_frame,(c.x,c.y),4,self.colorMap[idx],1)
 					self.display_frame = cv2.putText(self.display_frame,"{}".format(c.id),(int(c.x+xp),int(c.y+yp)), cv2.FONT_HERSHEY_PLAIN, 2, self.colorMap[idx], thickness = 2)
+
 		cv2.imwrite(os.path.join(os.getcwd(), 'data', self.name,'labelled_photos','{}.jpg'.format(self.active_frame_info.index)),self.display_frame)
+		cv2.imwrite(os.path.join(os.getcwd(), 'data', self.name,'labelled_photos','{}_food_mask.jpg'.format(self.active_frame_info.index)),self.display_frame*self.food_patch_mask)
 
 	@pyqtSlot()
 	def update_list_of_behaviors(self):

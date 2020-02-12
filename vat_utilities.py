@@ -275,13 +275,14 @@ class DataWriter(object):
 			self.videoinfo = pickle.load(f)
 
 
-	def _get_patch_info(self,patch, x,y):
+	def _get_patch_info(self,patch, x,y, draw_key=False):
 		if patch is None:
-			return False, None
-		elif patch[int(x),int(y)]==255:
+			return False, None, None
+		elif patch[int(y),int(x)]==255:
 			status = True
 		else:
 			status = False
+
 		patch = (255-patch)
 		contours, _ = cv2.findContours(patch, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 		contours = [c for c in contours if cv2.contourArea(c)<(0.75*patch.shape[0]*patch.shape[1])]
@@ -292,11 +293,20 @@ class DataWriter(object):
 				cx = np.float16(M['m10']/M['m00'])
 				cy = np.float16(M['m01']/M['m00'])
 				centroids.append(np.asarray([int(cx),int(cy)]))
+
 		hinge = np.asarray([int(x), int(y)])
 		dists = [np.linalg.norm(hinge-c) for c in centroids]
 		dist = min(dists)
+		patch_id = dists.index(dist)
+		patch_id += 1
 
-		return status, dist
+		if patch is not None and draw_key:
+			address = self.pickle_name.split('.')[0]+'_patch_key.jpg'
+			patch_key = cv2.cvtColor(patch, cv2.COLOR_GRAY2BGR)
+			for idx,c in enumerate(centroids):
+				cv2.putText(patch_key,"{}".format(idx+1),(c[0],c[1]), cv2.FONT_HERSHEY_PLAIN, 5, (0,255,0), thickness=3)
+			cv2.imwrite(address, patch_key)
+		return status, dist, patch_id
 
 	def _get_sorted_dists(self, frame_info,target_id):
 		sorted_dists = []
@@ -376,11 +386,15 @@ class DataWriter(object):
 				courting_partner = frame_info.behavior_list[idx][3]
 				row = [frame_idx, video_idx, id, sex, species, behavior, courting_partner]
 
-				patch_status, dist_to_closest_patch = self._get_patch_info(self.foodpatch_mask,x,y)
+				if idx==0:
+					patch_status, dist_to_closest_patch, patch_id = self._get_patch_info(self.foodpatch_mask,x,y, draw_key=True)
+				else:
+					patch_status, dist_to_closest_patch, patch_id = self._get_patch_info(self.foodpatch_mask,x,y, draw_key=False)
 				sorted_dists, sorted_ids = self._get_sorted_dists(frame_info, id)
 				row.append(patch_status)
 				try:
 					row.append(dist_to_closest_patch*self.conversion_factor)
+					row.append(patch_id)
 					row.append(x*self.conversion_factor)
 					row.append(y*self.conversion_factor)
 				except TypeError:
@@ -396,7 +410,7 @@ class DataWriter(object):
 						row.append(sorted_dists[i])
 						row.append(sorted_ids[i])
 				self.rows.append(row)
-		self.header = ['labelled_frame', 'video_frame', 'animal_id', "sex", "species", "behavior", "courting_partner", 'on_patch', 'dist_to_closest_patch_centroid','x_pos','y_pos']
+		self.header = ['labelled_frame', 'video_frame', 'animal_id', "sex", "species", "behavior", "courting_partner", 'on_patch', 'dist_to_closest_patch_centroid','patch_id','x_pos','y_pos']
 
 		for i in range(len(sorted_dists)):
 			if i==0:
