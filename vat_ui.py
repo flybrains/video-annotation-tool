@@ -221,21 +221,25 @@ class BGCalculator(QObject):
 		self.progressChanged.emit(progress)
 
 	@pyqtSlot(str, int)
-	def calculateBGwithProgress(self, video_address, center):
-
+	def calculateBGwithProgress(self, video_address, center, start=0):
+		#bgDone = False
+		# while not bgDone:
+		# 	try:
 		cap = cv2.VideoCapture(video_address)
 		_, frame =cap.read()
-		cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+		cap.set(cv2.CAP_PROP_POS_FRAMES, 80)
 		height = frame.shape[0]
 		xl, xr = center-int(height/2), center+int(height/2)
 
 		#depth = int(np.floor(cap.get(cv2.CAP_PROP_FRAME_COUNT)/200))
 		depth = 80
 		blank = []
-		frameIdxs = np.linspace(0, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)-100), num=depth)
+		frameIdxs = np.linspace(start, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)-100), num=depth)
 		frameIdxs = [int(e) for e in frameIdxs]
 		frameIdxs = frameIdxs[:-2]
 		self.started.emit()
+
+
 
 		for idx,i in enumerate(frameIdxs):
 			cap = cv2.VideoCapture(video_address)
@@ -248,9 +252,15 @@ class BGCalculator(QObject):
 		blank = np.asarray(blank)
 		bg = np.mean(blank, axis=0)
 		bg = bg.astype(np.uint8)
+		self.finished.emit(bg)
+		self.finished.emit(bg)
+		bgDone = True
+			# except:
+			# 	print(start)
+			# 	start = start + 2000
 
-		self.finished.emit(bg)
-		self.finished.emit(bg)
+
+
 
 class MainWindow(QMainWindow):
 	frameTuple = pyqtSignal(int, int)
@@ -421,7 +431,7 @@ class MainWindow(QMainWindow):
 
 		self.currentFrameIndex = self.frameIdxs[self.currentFrame-1]
 		if self.currentFrame==self.n_frames:
-			self.currentFrameIndex = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)-30)
+			self.currentFrameIndex = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)-300)
 
 
 		self.frameTuple.emit(self.currentFrame, self.n_frames)
@@ -502,6 +512,8 @@ class MainWindow(QMainWindow):
 		self.active_frame_info.position_list = [[e.id, e.x, e.y] for e in self.active_frame_info.list_of_contour_points]
 
 	def update_raw_image(self, tracking):
+		print(self.currentFrameIndex)
+
 		self.active_frame_info = self.video_information.get_frame_list()[self.currentFrame-1]
 
 		if self.active_frame_info.saved:
@@ -588,8 +600,29 @@ class MainWindow(QMainWindow):
 			self.error = ErrorMsg(msg)
 			self.error.show()
 
+	def test_last_frame(self):
+		done = False
+		lastFrame = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+		print(lastFrame)
+
+		while not done:
+			try:
+				self.cap.set(cv2.CAP_PROP_POS_FRAMES,lastFrame)
+				_, r = self.cap.read()
+				r.shape
+				done=True
+				return lastFrame
+
+			except AttributeError:
+				lastFrame = lastFrame - 30
+
+
 	def _get_spaced_frames(self, depth):
-		self.frameIdxs = np.linspace(0, int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)), num=depth)
+
+		lastFrame = self.test_last_frame()
+
+
+		self.frameIdxs = np.linspace(0, lastFrame, num=depth)
 		self.frameIdxs = [int(e) for e in self.frameIdxs]
 
 	@pyqtSlot()
@@ -885,15 +918,21 @@ class ImageWidget(QWidget):
 	def updateFrameLabel(self, v1, v2):
 		self.frameLabel.setText('    {} / {}'.format(v1, v2))
 
+
 	@pyqtSlot(QImage)
 	def setLabel(self, image):
 
 		image = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
 		image = image.copy()
+
+		if image.shape[0] > 1024 or image.shape[1]>1024:
+			image = cv2.resize(image, (1024,1024))
+
+
 		self.qimage = QImage(image, image.shape[0], image.shape[1], QImage.Format_RGB888)
-		self.qimage = self.qimage.scaled(900,900)
+		self.qimage = self.qimage.scaled(900,900, QtCore.Qt.KeepAspectRatio)
 		pixmap = QPixmap(self.qimage)
-		#pixmap = pixmap.scaled(700,700)
+
 		self.imageRef = self.qimage.scaled(900,900)
 		self.label.setPixmap(pixmap)
 		self.label.show()
