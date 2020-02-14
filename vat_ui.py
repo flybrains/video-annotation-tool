@@ -255,11 +255,6 @@ class BGCalculator(QObject):
 		self.finished.emit(bg)
 		self.finished.emit(bg)
 		bgDone = True
-			# except:
-			# 	print(start)
-			# 	start = start + 2000
-
-
 
 
 class MainWindow(QMainWindow):
@@ -568,11 +563,12 @@ class MainWindow(QMainWindow):
 	def add_read(self):
 		self.log_now.emit()
 		if len(self.active_frame_info.list_of_contour_points) < self.n_animals:
-			self.point_adder = vu.PointAdder(self.currentRawImage)
+			fitted = cv2.resize(self.currentRawImage, None, fx=0.5, fy=0.5)
+			self.point_adder = vu.PointAdder(fitted)
 			self.point_adder.define_point_location()
 			point = self.point_adder.get_point()
 			self.highest_index = len(self.active_frame_info.list_of_contour_points)
-			new_contour_pt = vc.ContourPoint(self.highest_index+1, point[0],  point[1], None, 1)
+			new_contour_pt = vc.ContourPoint(self.highest_index+1, int(2*point[0]),  int(2*point[1]), None, 1)
 			self.active_frame_info.add_contour_point(new_contour_pt)
 			temp = [e for e in self.active_frame_info.list_of_contour_points]
 			self.active_frame_info.list_of_contour_points = temp
@@ -603,7 +599,6 @@ class MainWindow(QMainWindow):
 	def test_last_frame(self):
 		done = False
 		lastFrame = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-		print(lastFrame)
 
 		while not done:
 			try:
